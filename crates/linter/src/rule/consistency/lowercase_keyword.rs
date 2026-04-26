@@ -29,11 +29,12 @@ pub struct LowercaseKeywordRule {
 #[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
 pub struct LowercaseKeywordConfig {
     pub level: Level,
+    pub drupal: bool,
 }
 
 impl Default for LowercaseKeywordConfig {
     fn default() -> Self {
-        Self { level: Level::Help }
+        Self { level: Level::Help, drupal: false }
     }
 }
 
@@ -94,6 +95,28 @@ impl LintRule for LowercaseKeywordRule {
         let Node::Keyword(keyword) = node else {
             return;
         };
+
+        if self.cfg.drupal
+            && (keyword.value.eq_ignore_ascii_case("null")
+                || keyword.value.eq_ignore_ascii_case("true")
+                || keyword.value.eq_ignore_ascii_case("false")
+            ) {
+            if !keyword.value.chars().all(|c| !c.is_ascii_alphabetic() || c.is_ascii_uppercase()) {
+                let uppercase = keyword.value.to_ascii_uppercase();
+
+                let issue = Issue::new(self.cfg.level(), format!("Keyword `{}` should be in uppercase.", keyword.value))
+                    .with_code(self.meta.code)
+                    .with_annotation(Annotation::primary(keyword.span()))
+                    .with_note(format!("The keyword `{}` does not follow uppercase convention.", keyword.value))
+                    .with_help(format!("Consider using `{}` instead of `{}`.", uppercase, keyword.value));
+
+                ctx.collector.propose(issue, |edits| {
+                    edits.push(TextEdit::replace(keyword.span, uppercase));
+                });
+            }
+
+            return;
+        }
 
         if keyword.value.chars().all(|c| !c.is_ascii_alphabetic() || c.is_ascii_lowercase()) {
             return; // Already in lowercase, no issue to report
